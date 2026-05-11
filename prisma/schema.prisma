@@ -1,0 +1,678 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Devotional {
+  id                  String   @id @default(cuid())
+  date                String   @unique
+  title               String
+  bibleVerse          String
+  bibleReference      String
+  reflection          String
+  story               String
+  biblicalCharacter   String
+  application         String
+  prayer              String
+  topic               String
+  titleEs             String
+  bibleVerseEs        String
+  bibleReferenceEs    String   @default("")
+  reflectionEs        String
+  storyEs             String
+  biblicalCharacterEs String
+  applicationEs       String
+  prayerEs            String
+  topicEs             String
+  imageUrl            String
+  version             String   @default("RVR1960")
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
+model User {
+  id                     String            @id @default(cuid())
+  nickname               String            @unique
+  nicknameLower          String            @unique
+  normalizedNickname     String            @default("")
+  role                   String            @default("USER") // "USER" | "MODERATOR" | "OWNER"
+  avatarId               String            @default("avatar_dove")
+  frameId                String?
+  titleId                String?
+  themeId                String            @default("theme_amanecer")
+  selectedMusicId        String            @default("music_free_1")
+  points                 Int               @default(0)
+  streakCurrent          Int               @default(0)
+  streakBest             Int               @default(0)
+  devotionalsCompleted   Int               @default(0)
+  totalTimeSeconds       Int               @default(0)
+  pointsEarnedTotal      Int               @default(0)
+  pointsSpentTotal       Int               @default(0)
+  lastActiveAt           DateTime?
+  lastSeenAt             DateTime?
+  dailyActions           String            @default("{}")
+  // Duel ranking & daily cap
+  duelRating             Int               @default(1000)
+  duelWins               Int               @default(0)
+  duelLosses             Int               @default(0)
+  duelWinStreak          Int               @default(0)
+  duelBestStreak         Int               @default(0)
+  duelRewardCount        Int               @default(0)  // resets daily
+  duelRewardDate         String            @default("") // YYYY-MM-DD
+  deviceId               String?
+  migratedFromUserId     String?
+  communityOptIn         Boolean           @default(false)
+  prayerDisplayOptIn     Boolean           @default(true)
+  supportCount           Int               @default(0)
+  countryCode            String?
+  showCountry            Boolean           @default(true)
+  createdAt              DateTime          @default(now())
+  updatedAt              DateTime          @updatedAt
+  activeBadgeId          String?
+  pointLedger            PointLedger[]
+  prayerRequests         PrayerRequest[]
+  promoRedemptions       PromoRedemption[]
+  transferCodesGenerated TransferCode[]    @relation("TransferCodeSource")
+  favorites              UserFavorite[]
+  inventory              UserInventory[]
+  supportReceived        UserSupport[]     @relation("SupportReceived")
+  supportGiven           UserSupport[]     @relation("SupportGiven")
+  weeklyProgress         WeeklyProgress[]
+  giftsSent              GiftTransaction[] @relation("GiftsSent")
+  giftsReceived          GiftTransaction[] @relation("GiftsReceived")
+  sessions               UserSession[]
+  biblicalCards          BiblicalCardInventory[]
+  collectionCardRewards  CollectionCardReward[]
+  tradesInitiated        CardTrade[]             @relation("TradesInitiated")
+  tradesReceived         CardTrade[]             @relation("TradesReceived")
+  testimonies            Testimony[]
+  devotionalComments     DevotionalComment[]
+  devotionalCommentLikes DevotionalCommentLike[]
+}
+
+model UserSession {
+  id           String    @id @default(cuid())
+  userId       String
+  startedAt    DateTime
+  lastSeenAt   DateTime
+  endedAt      DateTime?
+  totalSeconds Int       @default(0)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, startedAt])
+}
+
+model UserSupport {
+  id         String   @id @default(cuid())
+  fromUserId String
+  toUserId   String
+  dateId     String
+  createdAt  DateTime @default(now())
+  toUser     User     @relation("SupportReceived", fields: [toUserId], references: [id], onDelete: Cascade)
+  fromUser   User     @relation("SupportGiven", fields: [fromUserId], references: [id], onDelete: Cascade)
+
+  @@unique([fromUserId, toUserId, dateId])
+  @@index([toUserId])
+  @@index([fromUserId])
+}
+
+model StoreItem {
+  id            String          @id @default(cuid())
+  type          String
+  nameEn        String
+  nameEs        String
+  descriptionEn String          @default("")
+  descriptionEs String          @default("")
+  pricePoints   Int
+  assetRef      String          @default("")
+  rarity        String          @default("common")
+  sortOrder     Int             @default(0)
+  available     Boolean         @default(true)
+  metadata      String          @default("{}")
+  createdAt     DateTime        @default(now())
+  // Dynamic catalog fields
+  category      String          @default("")
+  subcategory   String          @default("")
+  isNew         Boolean         @default(false)
+  animationType String          @default("none") // none | glow | sparkle | floating | flame | water
+  badge         String?         // "⭐ Aventura" | "✨ Nuevo" | "🎄 Navidad" | "✝ Semana Santa"
+  bundleId      String?         // links reward items to their parent bundle
+  comingSoon    Boolean         @default(false)
+  seasonId      String?         // links item to a season/event
+  releasedAt    DateTime        @default(now())
+  inventory     UserInventory[]
+}
+
+model Season {
+  id                 String   @id
+  name               String
+  startDate          DateTime
+  endDate            DateTime
+  priority           Int      @default(0)
+  storeSlot          String   @default("season_event") // featured_adventure | featured_store | season_event
+  bannerTitle        String
+  bannerDescription  String
+  accentColor        String   @default("#7A1F1F")
+  isActive           Boolean  @default(true)
+  preview            Boolean  @default(false) // If true, treated as active regardless of date (DEV only)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+model UserInventory {
+  id         String    @id @default(cuid())
+  userId     String
+  itemId     String
+  acquiredAt DateTime  @default(now())
+  source     String    @default("store")
+  item       StoreItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, itemId])
+}
+
+model WeeklyChallenge {
+  id             String           @id @default(cuid())
+  weekId         String
+  challengeIndex Int
+  type           String
+  goalCount      Int
+  rewardPoints   Int
+  rewardItemId   String?
+  titleEn        String
+  titleEs        String
+  descriptionEn  String
+  descriptionEs  String
+  startDate      DateTime
+  endDate        DateTime
+  createdAt      DateTime         @default(now())
+  progress       WeeklyProgress[]
+
+  @@unique([weekId, challengeIndex])
+}
+
+model WeeklyProgress {
+  id           String          @id @default(cuid())
+  userId       String
+  challengeId  String
+  currentCount Int             @default(0)
+  completed    Boolean         @default(false)
+  claimed      Boolean         @default(false)
+  updatedAt    DateTime        @updatedAt
+  challenge    WeeklyChallenge @relation(fields: [challengeId], references: [id], onDelete: Cascade)
+  user         User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, challengeId])
+}
+
+model UserFavorite {
+  id             String   @id @default(cuid())
+  userId         String
+  devotionalDate String
+  createdAt      DateTime @default(now())
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, devotionalDate])
+}
+
+model BiblePassage {
+  id               String   @id @default(cuid())
+  refKey           String
+  lang             String
+  book             String
+  chapterStart     Int
+  verseStart       Int
+  chapterEnd       Int?
+  verseEnd         Int?
+  referenceDisplay String
+  text             String
+  source           String   @default("api")
+  createdAt        DateTime @default(now())
+
+  @@unique([refKey, lang])
+  @@index([lang])
+}
+
+model PointLedger {
+  id        String   @id @default(cuid())
+  userId    String
+  ledgerId  String
+  type      String
+  dateId    String
+  amount    Int
+  metadata  String   @default("{}")
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, ledgerId])
+  @@index([userId])
+}
+
+model TransferCode {
+  id           String    @id @default(cuid())
+  code         String    @unique
+  sourceUserId String
+  expiresAt    DateTime
+  used         Boolean   @default(false)
+  usedByUserId String?
+  usedAt       DateTime?
+  createdAt    DateTime  @default(now())
+  sourceUser   User      @relation("TransferCodeSource", fields: [sourceUserId], references: [id], onDelete: Cascade)
+}
+
+model PromoCode {
+  id          String            @id
+  displayCode String
+  points      Int
+  isActive    Boolean           @default(true)
+  maxUses     Int?
+  totalUses   Int               @default(0)
+  createdAt   DateTime          @default(now())
+  redemptions PromoRedemption[]
+}
+
+model PromoRedemption {
+  id            String    @id @default(cuid())
+  userId        String
+  codeId        String
+  pointsAwarded Int
+  redeemedAt    DateTime  @default(now())
+  promoCode     PromoCode @relation(fields: [codeId], references: [id], onDelete: Cascade)
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, codeId])
+}
+
+model PrayerRequest {
+  id               String   @id @default(cuid())
+  userId           String
+  periodId         String
+  mode             String
+  categoryKey      String
+  nickname         String?
+  avatarId         String?
+  frameId          String?
+  titleId          String?
+  displayNameOptIn Boolean  @default(true)
+  expiresAt        DateTime
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, periodId, mode])
+  @@index([periodId, mode])
+  @@index([expiresAt])
+}
+
+model DailyPrayer {
+  id                 String   @id @default(cuid())
+  dateId             String   @unique
+  title              String
+  prayerText         String
+  includedCategories String   @default("[]")
+  titleEs            String
+  prayerTextEs       String
+  totalRequests      Int      @default(0)
+  categoryStats      String   @default("{}")
+  createdAt          DateTime @default(now())
+}
+
+model AppBranding {
+  id                     String   @id @default("app")
+  appName                String   @default("Luz Diaria")
+  taglineEs              String   @default("Tu devocional diario")
+  taglineEn              String   @default("Your daily devotional")
+  shareWatermarkEnabled  Boolean  @default(true)
+  shareWatermarkPosition String   @default("bottom-left")
+  updatedAt              DateTime @updatedAt
+}
+
+model CollectionClaim {
+  id            String   @id @default(cuid())
+  userId        String
+  collectionId  String
+  pointsAwarded Int
+  claimedAt     DateTime @default(now())
+
+  @@unique([userId, collectionId])
+  @@index([userId])
+}
+
+model UserChapterProgress {
+  id                String   @id @default(cuid())
+  userId            String
+  collectionId      String
+  claimedChapterIds String   @default("[]")
+  updatedAt         DateTime @updatedAt
+
+  @@unique([userId, collectionId])
+  @@index([userId])
+}
+
+model DevotionalCompletion {
+  id             String   @id @default(cuid())
+  userId         String
+  devotionalDate String
+  completedAt    DateTime @default(now())
+
+  @@unique([userId, devotionalDate])
+  @@index([userId])
+}
+
+model StreakSnapshot {
+  id                          String   @id @default(cuid())
+  snapshotDate                String   // YYYY-MM-DD
+  userId                      String
+  streak                      Int
+  lastDevotionalDateCompleted String?
+  totalDevotionalsCompleted   Int
+  updatedAt                   DateTime @updatedAt
+
+  @@unique([snapshotDate, userId])
+  @@index([snapshotDate])
+  @@index([userId])
+}
+
+model SupportTicket {
+  id             String   @id @default(cuid())
+  incidentNumber String?  @unique // Friendly ID: LD-YYYYMMDD-NNNN (null for legacy tickets)
+  userId         String
+  type           String   // "streak_missing" | "devotional_not_counted" | "audio_tts" | "notification" | "reward_drop"
+  claimedStreak  Int      @default(0)
+  claimedDate    String   @default("") // YYYY-MM-DD (used for streak/devotional)
+  clientClaim    String   @default("{}") // JSON: type-specific payload
+  status         String   @default("open") // "open" | "auto_fixed" | "needs_human" | "waiting_user" | "closed"
+  resolutionNote String?
+  rating         Int?     // 1–4 user satisfaction rating
+  beforeState    String   @default("{}") // JSON audit
+  afterState     String   @default("{}") // JSON audit
+  botPreview     String   @default("{}") // JSON: { summary, userMessageEs, userMessageEn, action }
+  snapshotDate   String?  // YYYY-MM-DD of the snapshot used at creation time (null = none found)
+  snapshotId     String?  // ID of the StreakSnapshot used at creation time
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  events         SupportTicketEvent[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([type])
+  @@index([incidentNumber])
+}
+
+model SupportTicketEvent {
+  id        String   @id @default(cuid())
+  ticketId  String
+  createdAt DateTime @default(now())
+  actor     String   // "USER" | "SYSTEM" | "ADMIN"
+  type      String   // "CREATED" | "STATUS_CHANGE" | "SYSTEM_REPLY" | "ADMIN_REPLY" | "USER_REPLY" | "AUTO_FIX" | "COMPENSATION" | "REQUEST_INFO" | "CLOSED" | "RATING"
+  message   String   @default("")
+  meta      String   @default("{}") // JSON: optional metadata
+
+  ticket    SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId])
+  @@index([createdAt])
+}
+
+// Gift Drop system - admin-managed premium gifts
+model GiftDrop {
+  id               String     @id @default(cuid())
+  title            String
+  message          String
+  rewardType       String     // "CHEST" | "THEME" | "TITLE" | "AVATAR" | "ITEM"
+  rewardId         String
+  audienceType     String     @default("ALL_USERS") // "ALL_USERS" | "USER_IDS"
+  audienceUserIds  String     @default("[]") // JSON array of user IDs
+  startsAt         DateTime?
+  endsAt           DateTime?
+  isActive         Boolean    @default(false)
+  createdAt        DateTime   @default(now())
+  userGifts        UserGift[]
+}
+
+model UserGift {
+  id         String    @id @default(cuid())
+  userId     String
+  giftDropId String
+  status     String    @default("PENDING") // "PENDING" | "CLAIMED" | "DISMISSED"
+  claimedAt  DateTime?
+  createdAt  DateTime  @default(now())
+  giftDrop   GiftDrop  @relation(fields: [giftDropId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, giftDropId])
+  @@index([userId])
+  @@index([giftDropId])
+}
+
+// Biblical Card Inventory - tracks each user's collected biblical cards
+model BiblicalCardInventory {
+  id         String   @id @default(cuid())
+  userId     String
+  cardId     String   // e.g. "david", "moses", "ark"
+  owned      Boolean  @default(false)
+  duplicates Int      @default(0)
+  isNew      Boolean  @default(false) // true until user opens the card detail
+  acquiredAt DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, cardId])
+  @@index([userId])
+}
+
+// Tracks which secret collection-completion card rewards have been claimed.
+// One row per user per collectionId — ensures reward is only granted once.
+model CollectionCardReward {
+  id           String   @id @default(cuid())
+  userId       String
+  collectionId String   // e.g. "pascua_2026"
+  secretCardId String   // e.g. "jesus_resucitado"
+  pointsAwarded Int     @default(0)
+  claimedAt    DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, collectionId])
+  @@index([userId])
+}
+
+// Audit log for admin role changes
+model AdminAuditLog {
+  id           String   @id @default(cuid())
+  actorUserId  String   // who performed the action
+  targetUserId String   // who was affected
+  action       String   // e.g. "SET_ROLE"
+  beforeRole   String
+  afterRole    String
+  createdAt    DateTime @default(now())
+
+  @@index([actorUserId])
+  @@index([targetUserId])
+  @@index([createdAt])
+}
+
+// User testimonies - submitted, moderated, displayed in community
+model Testimony {
+  id          String   @id @default(cuid())
+  userId      String
+  text        String   // the testimony text (max 500 chars)
+  status      String   @default("PENDING") // PENDING | APPROVED | REJECTED
+  reviewedBy  String?  // moderator userId who reviewed
+  reviewedAt  DateTime?
+  likeCount   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  likes       TestimonyLike[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// Tracks which users liked which testimonies (one like per user per testimony)
+model TestimonyLike {
+  id          String   @id @default(cuid())
+  testimonyId String
+  userId      String
+  createdAt   DateTime @default(now())
+
+  testimony   Testimony @relation(fields: [testimonyId], references: [id], onDelete: Cascade)
+
+  @@unique([testimonyId, userId])
+  @@index([userId])
+  @@index([testimonyId])
+}
+
+// Comments on daily devotionals — permanent, ordered oldest→newest
+model DevotionalComment {
+  id             String    @id @default(cuid())
+  devotionalDate String    // e.g. "2026-03-13" — matches Devotional.date
+  userId         String
+  text           String    // max 500 chars
+  likeCount      Int       @default(0)
+  deletedAt      DateTime? // soft-deleted by moderator
+
+  createdAt      DateTime  @default(now())
+
+  user           User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  likes          DevotionalCommentLike[]
+
+  @@index([devotionalDate])
+  @@index([userId])
+  @@index([createdAt])
+}
+
+// One like per user per comment
+model DevotionalCommentLike {
+  id        String   @id @default(cuid())
+  commentId String
+  userId    String
+  createdAt DateTime @default(now())
+
+  comment   DevotionalComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([commentId, userId])
+  @@index([userId])
+  @@index([commentId])
+}
+
+model GiftTransaction {
+  id             String    @id @default(cuid())
+  senderUserId   String
+  receiverUserId String
+  itemId         String
+  pricePaid      Int
+  message        String    @default("")
+  status         String    @default("sent") // "sent" | "delivered"
+  createdAt      DateTime  @default(now())
+  sender         User      @relation("GiftsSent", fields: [senderUserId], references: [id], onDelete: Cascade)
+  receiver       User      @relation("GiftsReceived", fields: [receiverUserId], references: [id], onDelete: Cascade)
+  notifications  GiftNotification[]
+
+  @@index([senderUserId])
+  @@index([receiverUserId])
+}
+
+model GiftNotification {
+  id                String          @id @default(cuid())
+  userId            String
+  giftTransactionId String
+  seen              Boolean         @default(false)
+  createdAt         DateTime        @default(now())
+  giftTransaction   GiftTransaction @relation(fields: [giftTransactionId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, giftTransactionId])
+  @@index([userId])
+  @@index([seen])
+}
+
+// Card trading system — phase 1: one-for-one duplicate card trades between users
+model CardTrade {
+  id              String    @id @default(cuid())
+  fromUserId      String
+  toUserId        String
+  offeredCardId   String    // cardId the initiator offers (must have duplicates > 0)
+  requestedCardId String    // cardId the initiator wants  (toUser must have duplicates > 0)
+  status          String    @default("pending") // pending | accepted | rejected | cancelled | failed
+  createdAt       DateTime  @default(now())
+  respondedAt     DateTime?
+  fromUser        User      @relation("TradesInitiated", fields: [fromUserId], references: [id], onDelete: Cascade)
+  toUser          User      @relation("TradesReceived",  fields: [toUserId],   references: [id], onDelete: Cascade)
+
+  @@index([fromUserId])
+  @@index([toUserId])
+  @@index([status])
+}
+
+// App event log — lightweight analytics (TTS usage, tab screen time)
+model AppEvent {
+  id        String   @id @default(cuid())
+  userId    String
+  type      String   // "tts_used" | "tab_time"
+  screen    String   // "devotional" | "bible" | "studies" | "library" | "community" | "prayer" | "store" | "settings"
+  seconds   Int      @default(0)
+  dateId    String   // YYYY-MM-DD (CR timezone)
+  createdAt DateTime @default(now())
+
+  @@index([type, dateId])
+  @@index([userId, type, dateId])
+}
+
+// Duelo de Sabiduría — Bible trivia duel matches
+model DuelMatch {
+  id              String    @id @default(cuid())
+  player1UserId   String
+  player2UserId   String    // Can be user ID or "bot:juanito" for bot matches
+  status          String    @default("in_progress") // in_progress | completed | abandoned
+  questions       String    @default("[]") // JSON: array of question IDs used
+  player1Score    Int       @default(0)
+  player2Score    Int       @default(0)
+  winnerUserId    String?   // userId of winner, or "bot:juanito", or null for draw
+  pointsAwarded   Int       @default(0)
+  ratingChange    Int       @default(0)  // rating delta for player1 on this match
+  isBotMatch      Boolean   @default(false)
+  // Disconnect detection for human matches
+  player1LastSeen DateTime?
+  player2LastSeen DateTime?
+  createdAt       DateTime  @default(now())
+  completedAt     DateTime?
+
+  @@index([player1UserId])
+  @@index([status])
+}
+
+// Matchmaking queue entry — one per user waiting for a human opponent
+model DuelQueue {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  duelRating  Int      @default(1000)
+  questionIds String   @default("[]") // JSON: question IDs chosen by this player
+  status      String   @default("waiting") // waiting | matched | cancelled
+  matchId     String?  // set once matched
+  joinedAt    DateTime @default(now())
+
+  @@index([status])
+  @@index([joinedAt])
+}
+
+// Per-round answers for human vs human matches
+model DuelRoundAnswer {
+  id            String   @id @default(cuid())
+  matchId       String
+  userId        String
+  questionIndex Int
+  answerIndex   Int      // -1 = timed out (no answer)
+  isCorrect     Boolean  @default(false) // did this answer match the correct option?
+  answeredAt    DateTime @default(now())
+
+  @@unique([matchId, userId, questionIndex])
+  @@index([matchId, questionIndex])
+}
