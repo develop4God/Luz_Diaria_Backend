@@ -39,7 +39,7 @@ export function firebaseAuth(c: Context, next: Next) {
           if (parts.length === 3) {
             // Looks like a JWT
             const payload = JSON.parse(
-              Buffer.from(parts[1], "base64").toString("utf-8")
+              Buffer.from(parts[1] || "", "base64").toString("utf-8")
             );
             firebaseUid = payload.sub || payload.uid;
             email = payload.email || "dev@example.com";
@@ -123,7 +123,7 @@ export function getFirebaseUidFromRequest(c: Context): string | null {
     const parts = idToken.split(".");
     if (parts.length === 3) {
       const payload = JSON.parse(
-        Buffer.from(parts[1], "base64").toString("utf-8")
+        Buffer.from(parts[1] || "", "base64").toString("utf-8")
       );
       return payload.sub || payload.uid || null;
     }

@@ -6,6 +6,7 @@ import { checkAndAwardBadges } from "../seed-badges";
 import { validateNickname, normalizeNickname } from "../lib/nickname-safety";
 import { IS_DEV } from "../env";
 import { generateNextRound } from "../weekly-challenges";
+import { firebaseAuth, getFirebaseUidFromRequest } from "../middleware/firebase-auth";
 
 export const gamificationRouter = new Hono();
 
@@ -569,12 +570,30 @@ gamificationRouter.post(
 // ============================================
 
 // POST /points/award - Award points with ledger-based idempotent tracking
+// 🔒 CRITICAL: Now requires Firebase auth - user can only award to themselves
 gamificationRouter.post(
   "/points/award",
+  firebaseAuth,
   zValidator("json", awardPointsSchema),
   async (c) => {
     try {
-      const { userId, action, metadata } = c.req.valid("json");
+      const { userId: requestedUserId, action, metadata } = c.req.valid("json");
+      // @ts-ignore - Hono context doesn't strongly type custom set values
+      const authUser = c.get("authUser") as any;
+      const authenticatedUserId = authUser?.userId;
+
+      // 🔒 SECURITY: Enforce that users can only award points to themselves
+      if (!authenticatedUserId || authenticatedUserId !== requestedUserId) {
+        console.warn(
+          `[Gamification] SECURITY: User ${authenticatedUserId} attempted to award points to ${requestedUserId}`,
+        );
+        return c.json(
+          { error: "Forbidden: Can only award points to your own account" },
+          403,
+        );
+      }
+
+      const userId = requestedUserId;
       const today = getTodayDateString();
 
       const user = await prisma.user.findUnique({
@@ -918,12 +937,30 @@ gamificationRouter.get("/inventory/:userId", async (c) => {
 });
 
 // POST /store/purchase - Purchase item
+// 🔒 CRITICAL: Now requires Firebase auth - user can only purchase for themselves
 gamificationRouter.post(
   "/store/purchase",
+  firebaseAuth,
   zValidator("json", purchaseSchema),
   async (c) => {
     try {
-      const { userId, itemId } = c.req.valid("json");
+      const { userId: requestedUserId, itemId } = c.req.valid("json");
+      // @ts-ignore - Hono context doesn't strongly type custom set values
+      const authUser = c.get("authUser") as any;
+      const authenticatedUserId = authUser?.userId;
+
+      // 🔒 SECURITY: Enforce that users can only purchase for themselves
+      if (!authenticatedUserId || authenticatedUserId !== requestedUserId) {
+        console.warn(
+          `[Store] SECURITY: User ${authenticatedUserId} attempted to purchase items for ${requestedUserId}`,
+        );
+        return c.json(
+          { error: "Forbidden: Can only purchase items for your own account" },
+          403,
+        );
+      }
+
+      const userId = requestedUserId;
 
       // Auto-create user if not found (e.g. after DB reset)
       const existingUser = await prisma.user.findUnique({ where: { id: userId } });
