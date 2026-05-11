@@ -12,14 +12,24 @@ const ROLE_RANK: Record<UserRole, number> = {
 
 /**
  * requireRole middleware factory.
- * Reads X-User-Id header, looks up the user's role, and enforces minimum required role.
+ * Expects authUser to be set by firebaseAuth middleware.
+ * Falls back to X-User-Id header for backward compatibility during transition.
  */
 export function requireRole(minRole: UserRole) {
   return async (c: Context, next: Next) => {
-    const userId = c.req.header("X-User-Id");
+    // First try to get auth from Firebase middleware
+    const authUser = c.get("authUser");
+
+    let userId: string | undefined;
+    if (authUser?.userId) {
+      userId = authUser.userId;
+    } else {
+      // Fallback to X-User-Id header (for backward compatibility)
+      userId = c.req.header("X-User-Id");
+    }
 
     if (!userId) {
-      console.warn(`[RBAC] Missing X-User-Id header on ${c.req.method} ${c.req.path}`);
+      console.warn(`[RBAC] Missing auth on ${c.req.method} ${c.req.path}`);
       return c.json({ success: false, error: "Forbidden" }, 403);
     }
 
