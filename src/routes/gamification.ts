@@ -6,6 +6,8 @@ import { checkAndAwardBadges } from "../seed-badges";
 import { validateNickname, normalizeNickname } from "../lib/nickname-safety";
 import { IS_DEV } from "../env";
 import { generateNextRound } from "../weekly-challenges";
+import { firebaseAuth, getFirebaseUidFromRequest } from "../middleware/firebase-auth";
+import { requireRole } from "../middleware/rbac";
 
 export const gamificationRouter = new Hono();
 
@@ -437,10 +439,18 @@ gamificationRouter.get("/user/:userId", async (c) => {
 // POST /user/:userId/sync - Sync local user data to server
 gamificationRouter.post(
   "/user/:userId/sync",
+  firebaseAuth,
   zValidator("json", syncUserSchema),
   async (c) => {
     try {
-      const userId = c.req.param("userId");
+      const requestedUserId = c.req.param("userId");
+      // @ts-ignore
+      const authUser = c.get("authUser") as any;
+      if (!authUser?.userId || authUser.userId !== requestedUserId) {
+        console.warn(`[Gamification] SECURITY: User ${authUser?.userId} attempted action for ${requestedUserId}`);
+        return c.json({ error: "Forbidden" }, 403);
+      }
+      const userId = requestedUserId;
       const data = c.req.valid("json");
 
       const existingUser = await prisma.user.findUnique({
@@ -569,12 +579,30 @@ gamificationRouter.post(
 // ============================================
 
 // POST /points/award - Award points with ledger-based idempotent tracking
+// 🔒 CRITICAL: Now requires Firebase auth - user can only award to themselves
 gamificationRouter.post(
   "/points/award",
+  firebaseAuth,
   zValidator("json", awardPointsSchema),
   async (c) => {
     try {
-      const { userId, action, metadata } = c.req.valid("json");
+      const { userId: requestedUserId, action, metadata } = c.req.valid("json");
+      // @ts-ignore - Hono context doesn't strongly type custom set values
+      const authUser = c.get("authUser") as any;
+      const authenticatedUserId = authUser?.userId;
+
+      // 🔒 SECURITY: Enforce that users can only award points to themselves
+      if (!authenticatedUserId || authenticatedUserId !== requestedUserId) {
+        console.warn(
+          `[Gamification] SECURITY: User ${authenticatedUserId} attempted to award points to ${requestedUserId}`,
+        );
+        return c.json(
+          { error: "Forbidden: Can only award points to your own account" },
+          403,
+        );
+      }
+
+      const userId = requestedUserId;
       const today = getTodayDateString();
 
       const user = await prisma.user.findUnique({
@@ -918,12 +946,30 @@ gamificationRouter.get("/inventory/:userId", async (c) => {
 });
 
 // POST /store/purchase - Purchase item
+// 🔒 CRITICAL: Now requires Firebase auth - user can only purchase for themselves
 gamificationRouter.post(
   "/store/purchase",
+  firebaseAuth,
   zValidator("json", purchaseSchema),
   async (c) => {
     try {
-      const { userId, itemId } = c.req.valid("json");
+      const { userId: requestedUserId, itemId } = c.req.valid("json");
+      // @ts-ignore - Hono context doesn't strongly type custom set values
+      const authUser = c.get("authUser") as any;
+      const authenticatedUserId = authUser?.userId;
+
+      // 🔒 SECURITY: Enforce that users can only purchase for themselves
+      if (!authenticatedUserId || authenticatedUserId !== requestedUserId) {
+        console.warn(
+          `[Store] SECURITY: User ${authenticatedUserId} attempted to purchase items for ${requestedUserId}`,
+        );
+        return c.json(
+          { error: "Forbidden: Can only purchase items for your own account" },
+          403,
+        );
+      }
+
+      const userId = requestedUserId;
 
       // Auto-create user if not found (e.g. after DB reset)
       const existingUser = await prisma.user.findUnique({ where: { id: userId } });
@@ -1203,6 +1249,7 @@ gamificationRouter.post(
 // POST /store/purchase-bundle - Purchase a bundle of items
 gamificationRouter.post(
   "/store/purchase-bundle",
+  firebaseAuth,
   zValidator("json", z.object({
     userId: z.string(),
     bundleId: z.string(),
@@ -1211,7 +1258,14 @@ gamificationRouter.post(
   })),
   async (c) => {
     try {
-      const { userId, bundleId, itemIds, bundlePrice } = c.req.valid("json");
+      const { userId: requestedUserId, bundleId, itemIds, bundlePrice } = c.req.valid("json");
+      // @ts-ignore
+      const authUser = c.get("authUser") as any;
+      if (!authUser?.userId || authUser.userId !== requestedUserId) {
+        console.warn(`[Gamification] SECURITY: User ${authUser?.userId} attempted action for ${requestedUserId}`);
+        return c.json({ error: "Forbidden" }, 403);
+      }
+      const userId = requestedUserId;
 
       const result = await prisma.$transaction(async (tx) => {
         const user = await tx.user.findUnique({
@@ -1315,10 +1369,18 @@ gamificationRouter.post(
 // POST /user/:userId/equip - Equip item
 gamificationRouter.post(
   "/user/:userId/equip",
+  firebaseAuth,
   zValidator("json", equipSchema),
   async (c) => {
     try {
-      const userId = c.req.param("userId");
+      const requestedUserId = c.req.param("userId");
+      // @ts-ignore
+      const authUser = c.get("authUser") as any;
+      if (!authUser?.userId || authUser.userId !== requestedUserId) {
+        console.warn(`[Gamification] SECURITY: User ${authUser?.userId} attempted action for ${requestedUserId}`);
+        return c.json({ error: "Forbidden" }, 403);
+      }
+      const userId = requestedUserId;
       const { type, itemId } = c.req.valid("json");
 
       // Auto-create user if not found (e.g. after DB reset)
@@ -1558,10 +1620,18 @@ gamificationRouter.get("/challenges/progress/:userId", async (c) => {
 // POST /challenges/update - Update challenge progress
 gamificationRouter.post(
   "/challenges/update",
+  firebaseAuth,
   zValidator("json", updateChallengeSchema),
   async (c) => {
     try {
-      const { userId, type } = c.req.valid("json");
+      const { userId: requestedUserId, type } = c.req.valid("json");
+      // @ts-ignore
+      const authUser = c.get("authUser") as any;
+      if (!authUser?.userId || authUser.userId !== requestedUserId) {
+        console.warn(`[Gamification] SECURITY: User ${authUser?.userId} attempted action for ${requestedUserId}`);
+        return c.json({ error: "Forbidden" }, 403);
+      }
+      const userId = requestedUserId;
       const currentWeekId = getCurrentWeekId();
 
       const user = await prisma.user.findUnique({
@@ -1644,10 +1714,18 @@ gamificationRouter.post(
 // POST /challenges/claim - Claim challenge reward
 gamificationRouter.post(
   "/challenges/claim",
+  firebaseAuth,
   zValidator("json", claimChallengeSchema),
   async (c) => {
     try {
-      const { userId, challengeId } = c.req.valid("json");
+      const { userId: requestedUserId, challengeId } = c.req.valid("json");
+      // @ts-ignore
+      const authUser = c.get("authUser") as any;
+      if (!authUser?.userId || authUser.userId !== requestedUserId) {
+        console.warn(`[Gamification] SECURITY: User ${authUser?.userId} attempted action for ${requestedUserId}`);
+        return c.json({ error: "Forbidden" }, 403);
+      }
+      const userId = requestedUserId;
 
       const result = await prisma.$transaction(async (tx) => {
         const user = await tx.user.findUnique({
@@ -1813,7 +1891,7 @@ gamificationRouter.get("/challenges/active-round/:userId", async (c) => {
 });
 
 // POST /challenges/next-round - Generate the next round of challenges (called after chest claim)
-gamificationRouter.post("/challenges/next-round", async (c) => {
+gamificationRouter.post("/challenges/next-round", requireRole("OWNER"), async (c) => {
   try {
     const result = await generateNextRound();
     return c.json(result);
@@ -1824,7 +1902,7 @@ gamificationRouter.post("/challenges/next-round", async (c) => {
 });
 
 // POST /challenges/admin/force-complete - Mark user's current active round as completed+claimed (admin/testing)
-gamificationRouter.post("/challenges/admin/force-complete", async (c) => {
+gamificationRouter.post("/challenges/admin/force-complete", requireRole("OWNER"), async (c) => {
   try {
     const body = await c.req.json();
     const userId = body?.userId as string;
@@ -1892,7 +1970,7 @@ gamificationRouter.post("/challenges/admin/force-complete", async (c) => {
 });
 
 // POST /challenges/admin/reset - Reset all challenge progress for the current week (all rounds) for a user
-gamificationRouter.post("/challenges/admin/reset", async (c) => {
+gamificationRouter.post("/challenges/admin/reset", requireRole("OWNER"), async (c) => {
   try {
     const body = await c.req.json();
     const userId = body?.userId as string;
@@ -1945,10 +2023,18 @@ gamificationRouter.get("/nickname/check/:nickname", async (c) => {
 // POST /transfer/generate - Generate a transfer code for account restoration
 gamificationRouter.post(
   "/transfer/generate",
+  firebaseAuth,
   zValidator("json", generateTransferCodeSchema),
   async (c) => {
     try {
-      const { userId } = c.req.valid("json");
+      const { userId: requestedUserId } = c.req.valid("json");
+      // @ts-ignore
+      const authUser = c.get("authUser") as any;
+      if (!authUser?.userId || authUser.userId !== requestedUserId) {
+        console.warn(`[Gamification] SECURITY: User ${authUser?.userId} attempted action for ${requestedUserId}`);
+        return c.json({ error: "Forbidden" }, 403);
+      }
+      const userId = requestedUserId;
 
       const user = await prisma.user.findUnique({
         where: { id: userId },
@@ -2001,10 +2087,18 @@ gamificationRouter.post(
 // POST /transfer/restore - Restore account using transfer code
 gamificationRouter.post(
   "/transfer/restore",
+  firebaseAuth,
   zValidator("json", restoreTransferCodeSchema),
   async (c) => {
     try {
-      const { code, targetUserId } = c.req.valid("json");
+      const { code, targetUserId: requestedTargetUserId } = c.req.valid("json");
+      // @ts-ignore
+      const authUser = c.get("authUser") as any;
+      if (!authUser?.userId || authUser.userId !== requestedTargetUserId) {
+        console.warn(`[Gamification] SECURITY: User ${authUser?.userId} attempted action for ${requestedTargetUserId}`);
+        return c.json({ error: "Forbidden" }, 403);
+      }
+      const targetUserId = requestedTargetUserId;
 
       const result = await prisma.$transaction(async (tx) => {
         // Find the transfer code
@@ -2275,10 +2369,18 @@ gamificationRouter.get("/user/by-device/:deviceId", async (c) => {
 // PATCH /user/:userId/device - Update user's device ID
 gamificationRouter.patch(
   "/user/:userId/device",
+  firebaseAuth,
   zValidator("json", updateDeviceIdSchema),
   async (c) => {
     try {
-      const userId = c.req.param("userId");
+      const requestedUserId = c.req.param("userId");
+      // @ts-ignore
+      const authUser = c.get("authUser") as any;
+      if (!authUser?.userId || authUser.userId !== requestedUserId) {
+        console.warn(`[Gamification] SECURITY: User ${authUser?.userId} attempted action for ${requestedUserId}`);
+        return c.json({ error: "Forbidden" }, 403);
+      }
+      const userId = requestedUserId;
       const { deviceId } = c.req.valid("json");
 
       const user = await prisma.user.findUnique({
@@ -2376,10 +2478,18 @@ function normalizePromoCode(rawCode: string): string {
 // POST /promo/redeem - Redeem a promo code
 gamificationRouter.post(
   "/promo/redeem",
+  firebaseAuth,
   zValidator("json", redeemPromoCodeSchema),
   async (c) => {
     try {
-      const { userId, code: rawCode } = c.req.valid("json");
+      const { userId: requestedUserId, code: rawCode } = c.req.valid("json");
+      // @ts-ignore
+      const authUser = c.get("authUser") as any;
+      if (!authUser?.userId || authUser.userId !== requestedUserId) {
+        console.warn(`[Gamification] SECURITY: User ${authUser?.userId} attempted action for ${requestedUserId}`);
+        return c.json({ error: "Forbidden" }, 403);
+      }
+      const userId = requestedUserId;
       const codeId = normalizePromoCode(rawCode);
       const today = getTodayDateString();
 
@@ -2683,10 +2793,18 @@ gamificationRouter.get("/community/members", async (c) => {
 // PATCH /community/opt-in/:userId - Update user's community opt-in status
 gamificationRouter.patch(
   "/community/opt-in/:userId",
+  firebaseAuth,
   zValidator("json", updateCommunityOptInSchema),
   async (c) => {
     try {
-      const userId = c.req.param("userId");
+      const requestedUserId = c.req.param("userId");
+      // @ts-ignore
+      const authUser = c.get("authUser") as any;
+      if (!authUser?.userId || authUser.userId !== requestedUserId) {
+        console.warn(`[Gamification] SECURITY: User ${authUser?.userId} attempted action for ${requestedUserId}`);
+        return c.json({ error: "Forbidden" }, 403);
+      }
+      const userId = requestedUserId;
       const { optIn } = c.req.valid("json");
 
       const user = await prisma.user.findUnique({
@@ -2739,10 +2857,18 @@ gamificationRouter.get("/community/opt-in/:userId", async (c) => {
 // PATCH /user/:userId/country - Update user's country and showCountry preference
 gamificationRouter.patch(
   "/user/:userId/country",
+  firebaseAuth,
   zValidator("json", updateCountrySchema),
   async (c) => {
     try {
-      const userId = c.req.param("userId");
+      const requestedUserId = c.req.param("userId");
+      // @ts-ignore
+      const authUser = c.get("authUser") as any;
+      if (!authUser?.userId || authUser.userId !== requestedUserId) {
+        console.warn(`[Gamification] SECURITY: User ${authUser?.userId} attempted action for ${requestedUserId}`);
+        return c.json({ error: "Forbidden" }, 403);
+      }
+      const userId = requestedUserId;
       const { countryCode, showCountry } = c.req.valid("json");
 
       const user = await prisma.user.findUnique({ where: { id: userId } });
@@ -2804,6 +2930,7 @@ gamificationRouter.get("/collections/claims/:userId", async (c) => {
 // POST /collections/claim - Claim a completed collection reward
 gamificationRouter.post(
   "/collections/claim",
+  firebaseAuth,
   zValidator(
     "json",
     z.object({
@@ -2816,7 +2943,14 @@ gamificationRouter.post(
     })
   ),
   async (c) => {
-    const { userId, collectionId, ownedItemIds, rewardPoints } = c.req.valid("json");
+    const { userId: requestedUserId, collectionId, ownedItemIds, rewardPoints } = c.req.valid("json");
+    // @ts-ignore
+    const authUser = c.get("authUser") as any;
+    if (!authUser?.userId || authUser.userId !== requestedUserId) {
+      console.warn(`[Gamification] SECURITY: User ${authUser?.userId} attempted action for ${requestedUserId}`);
+      return c.json({ error: "Forbidden" }, 403);
+    }
+    const userId = requestedUserId;
 
     try {
       // Check if already claimed
@@ -2902,6 +3036,7 @@ gamificationRouter.get("/collections/chapters/progress/:userId", async (c) => {
 // Upserts chapter progress for a user+collection. Merge strategy: keep the union (most claimed).
 gamificationRouter.post(
   "/collections/chapters/progress",
+  firebaseAuth,
   zValidator("json", z.object({
     userId: z.string(),
     collectionId: z.string(),
@@ -2909,7 +3044,14 @@ gamificationRouter.post(
   })),
   async (c) => {
     try {
-      const { userId, collectionId, claimedChapterIds } = c.req.valid("json");
+      const { userId: requestedUserId, collectionId, claimedChapterIds } = c.req.valid("json");
+      // @ts-ignore
+      const authUser = c.get("authUser") as any;
+      if (!authUser?.userId || authUser.userId !== requestedUserId) {
+        console.warn(`[Gamification] SECURITY: User ${authUser?.userId} attempted action for ${requestedUserId}`);
+        return c.json({ error: "Forbidden" }, 403);
+      }
+      const userId = requestedUserId;
 
       // Merge with existing (union — never lose claims)
       const existing = await prisma.userChapterProgress.findUnique({
@@ -2937,13 +3079,21 @@ gamificationRouter.post(
 // POST /community/support - Send "Acompañar" gesture (1 per viewer per day per target)
 gamificationRouter.post(
   "/community/support",
+  firebaseAuth,
   zValidator("json", z.object({
     fromUserId: z.string(),
     toUserId: z.string(),
   })),
   async (c) => {
     try {
-      const { fromUserId, toUserId } = c.req.valid("json");
+      const { fromUserId: requestedFromUserId, toUserId } = c.req.valid("json");
+      // @ts-ignore
+      const authUser = c.get("authUser") as any;
+      if (!authUser?.userId || authUser.userId !== requestedFromUserId) {
+        console.warn(`[Gamification] SECURITY: User ${authUser?.userId} attempted action for ${requestedFromUserId}`);
+        return c.json({ error: "Forbidden" }, 403);
+      }
+      const fromUserId = requestedFromUserId;
 
       if (fromUserId === toUserId) {
         return c.json({ error: "Cannot support yourself" }, 400);
@@ -3137,10 +3287,18 @@ const MAX_DELTA_SECONDS = 60; // clamp: max seconds credited per heartbeat
 // POST /session/heartbeat - Track user session time (server-authoritative)
 gamificationRouter.post(
   "/session/heartbeat",
+  firebaseAuth,
   zValidator("json", heartbeatSchema),
   async (c) => {
     try {
-      const { sessionId, userId } = c.req.valid("json");
+      const { sessionId, userId: requestedUserId } = c.req.valid("json");
+      // @ts-ignore
+      const authUser = c.get("authUser") as any;
+      if (!authUser?.userId || authUser.userId !== requestedUserId) {
+        console.warn(`[Gamification] SECURITY: User ${authUser?.userId} attempted action for ${requestedUserId}`);
+        return c.json({ error: "Forbidden" }, 403);
+      }
+      const userId = requestedUserId;
       const serverNow = new Date();
 
       // Validate user exists
@@ -3241,11 +3399,14 @@ const renameSchema = z.object({
 // POST /user/rename - Change nickname using a rename token
 gamificationRouter.post(
   "/user/rename",
+  firebaseAuth,
   zValidator("json", renameSchema),
   async (c) => {
     try {
-      const userId = c.req.header("X-User-Id");
-      if (!userId) return c.json({ error: "Missing X-User-Id header" }, 400);
+      // @ts-ignore
+      const authUser = c.get("authUser") as any;
+      const userId = authUser?.userId;
+      if (!userId) return c.json({ error: "Unauthorized" }, 401);
 
       const { newNickname } = c.req.valid("json");
 
@@ -3328,9 +3489,16 @@ gamificationRouter.get("/biblical-cards/:userId", async (c) => {
 });
 
 // PATCH /biblical-cards/:userId/:cardId/seen — clear isNew flag when user opens a card
-gamificationRouter.patch("/biblical-cards/:userId/:cardId/seen", async (c) => {
+gamificationRouter.patch("/biblical-cards/:userId/:cardId/seen", firebaseAuth, async (c) => {
   try {
-    const userId = c.req.param("userId");
+    const requestedUserId = c.req.param("userId");
+    // @ts-ignore
+    const authUser = c.get("authUser") as any;
+    if (!authUser?.userId || authUser.userId !== requestedUserId) {
+      console.warn(`[Gamification] SECURITY: User ${authUser?.userId} attempted action for ${requestedUserId}`);
+      return c.json({ error: "Forbidden" }, 403);
+    }
+    const userId = requestedUserId;
     const cardId = c.req.param("cardId");
     await prisma.biblicalCardInventory.updateMany({
       where: { userId, cardId, isNew: true },
@@ -3359,6 +3527,7 @@ const COLLECTION_REWARD_MAP: Record<string, { secretCardId: string; bonusPoints:
 // Idempotent: second call returns 409 with alreadyClaimed=true
 gamificationRouter.post(
   "/biblical-cards/collection-reward",
+  firebaseAuth,
   zValidator("json", z.object({
     userId:       z.string(),
     collectionId: z.string(), // e.g. "pascua_2026"
@@ -3366,7 +3535,14 @@ gamificationRouter.post(
   })),
   async (c) => {
     try {
-      const { userId, collectionId, ownedCardIds } = c.req.valid("json");
+      const { userId: requestedUserId, collectionId, ownedCardIds } = c.req.valid("json");
+      // @ts-ignore
+      const authUser = c.get("authUser") as any;
+      if (!authUser?.userId || authUser.userId !== requestedUserId) {
+        console.warn(`[Gamification] SECURITY: User ${authUser?.userId} attempted action for ${requestedUserId}`);
+        return c.json({ error: "Forbidden" }, 403);
+      }
+      const userId = requestedUserId;
 
       // Look up reward config
       const rewardConfig = COLLECTION_REWARD_MAP[collectionId];
@@ -3555,7 +3731,7 @@ gamificationRouter.get("/biblical-cards/trades/user-cards/:userId", async (c) =>
 
 // POST /biblical-cards/trades
 // Create a new trade proposal
-gamificationRouter.post("/biblical-cards/trades", async (c) => {
+gamificationRouter.post("/biblical-cards/trades", firebaseAuth, async (c) => {
   try {
     const body = await c.req.json() as {
       fromUserId: string;
@@ -3563,7 +3739,14 @@ gamificationRouter.post("/biblical-cards/trades", async (c) => {
       offeredCardId: string;
       requestedCardId: string;
     };
-    const { fromUserId, toUserId, offeredCardId, requestedCardId } = body;
+    const { fromUserId: requestedFromUserId, toUserId, offeredCardId, requestedCardId } = body;
+    // @ts-ignore
+    const authUser = c.get("authUser") as any;
+    if (!authUser?.userId || authUser.userId !== requestedFromUserId) {
+      console.warn(`[Gamification] SECURITY: User ${authUser?.userId} attempted action for ${requestedFromUserId}`);
+      return c.json({ error: "Forbidden" }, 403);
+    }
+    const fromUserId = requestedFromUserId;
 
     if (!fromUserId || !toUserId || !offeredCardId || !requestedCardId) {
       return c.json({ error: "Missing required fields" }, 400);
@@ -3624,11 +3807,18 @@ gamificationRouter.post("/biblical-cards/trades", async (c) => {
 
 // PATCH /biblical-cards/trades/:tradeId/accept
 // Accept a pending trade — atomic validation + card swap
-gamificationRouter.patch("/biblical-cards/trades/:tradeId/accept", async (c) => {
+gamificationRouter.patch("/biblical-cards/trades/:tradeId/accept", firebaseAuth, async (c) => {
   try {
     const tradeId = c.req.param("tradeId");
     const body = await c.req.json() as { userId: string };
-    const { userId } = body;
+    const requestedUserId = body.userId;
+    // @ts-ignore
+    const authUser = c.get("authUser") as any;
+    if (!authUser?.userId || authUser.userId !== requestedUserId) {
+      console.warn(`[Gamification] SECURITY: User ${authUser?.userId} attempted action for ${requestedUserId}`);
+      return c.json({ error: "Forbidden" }, 403);
+    }
+    const userId = requestedUserId;
 
     const trade = await prisma.cardTrade.findUnique({ where: { id: tradeId } });
     if (!trade) return c.json({ error: "Trade not found" }, 404);
@@ -3749,11 +3939,18 @@ gamificationRouter.patch("/biblical-cards/trades/:tradeId/accept", async (c) => 
 });
 
 // PATCH /biblical-cards/trades/:tradeId/reject
-gamificationRouter.patch("/biblical-cards/trades/:tradeId/reject", async (c) => {
+gamificationRouter.patch("/biblical-cards/trades/:tradeId/reject", firebaseAuth, async (c) => {
   try {
     const tradeId = c.req.param("tradeId");
     const body = await c.req.json() as { userId: string };
-    const { userId } = body;
+    const requestedUserId = body.userId;
+    // @ts-ignore
+    const authUser = c.get("authUser") as any;
+    if (!authUser?.userId || authUser.userId !== requestedUserId) {
+      console.warn(`[Gamification] SECURITY: User ${authUser?.userId} attempted action for ${requestedUserId}`);
+      return c.json({ error: "Forbidden" }, 403);
+    }
+    const userId = requestedUserId;
 
     const trade = await prisma.cardTrade.findUnique({ where: { id: tradeId } });
     if (!trade) return c.json({ error: "Trade not found" }, 404);
@@ -3773,11 +3970,18 @@ gamificationRouter.patch("/biblical-cards/trades/:tradeId/reject", async (c) => 
 });
 
 // PATCH /biblical-cards/trades/:tradeId/cancel
-gamificationRouter.patch("/biblical-cards/trades/:tradeId/cancel", async (c) => {
+gamificationRouter.patch("/biblical-cards/trades/:tradeId/cancel", firebaseAuth, async (c) => {
   try {
     const tradeId = c.req.param("tradeId");
     const body = await c.req.json() as { userId: string };
-    const { userId } = body;
+    const requestedUserId = body.userId;
+    // @ts-ignore
+    const authUser = c.get("authUser") as any;
+    if (!authUser?.userId || authUser.userId !== requestedUserId) {
+      console.warn(`[Gamification] SECURITY: User ${authUser?.userId} attempted action for ${requestedUserId}`);
+      return c.json({ error: "Forbidden" }, 403);
+    }
+    const userId = requestedUserId;
 
     const trade = await prisma.cardTrade.findUnique({ where: { id: tradeId } });
     if (!trade) return c.json({ error: "Trade not found" }, 404);
@@ -3842,13 +4046,21 @@ gamificationRouter.get("/daily-pack/status/:userId", async (c) => {
 // POST /daily-pack/claim - Claim a daily free pack
 gamificationRouter.post(
   "/daily-pack/claim",
+  firebaseAuth,
   zValidator("json", z.object({
     userId: z.string(),
     packType: z.enum(["sobre_biblico", "pack_pascua", "pack_milagros", "pack_heroes"]),
   })),
   async (c) => {
     try {
-      const { userId, packType } = c.req.valid("json");
+      const { userId: requestedUserId, packType } = c.req.valid("json");
+      // @ts-ignore
+      const authUser = c.get("authUser") as any;
+      if (!authUser?.userId || authUser.userId !== requestedUserId) {
+        console.warn(`[Gamification] SECURITY: User ${authUser?.userId} attempted action for ${requestedUserId}`);
+        return c.json({ error: "Forbidden" }, 403);
+      }
+      const userId = requestedUserId;
       const today = new Date().toISOString().split("T")[0] as string;
 
       const result = await prisma.$transaction(async (tx) => {
@@ -3981,9 +4193,17 @@ gamificationRouter.post(
 // POST /sync-studies - Sync completed study IDs from client to ensure server-side tracking is accurate
 gamificationRouter.post(
   "/sync-studies",
+  firebaseAuth,
   zValidator("json", z.object({ userId: z.string(), completedStudyIds: z.array(z.string()) })),
   async (c) => {
-    const { userId, completedStudyIds } = c.req.valid("json");
+    const { userId: requestedUserId, completedStudyIds } = c.req.valid("json");
+    // @ts-ignore
+    const authUser = c.get("authUser") as any;
+    if (!authUser?.userId || authUser.userId !== requestedUserId) {
+      console.warn(`[Gamification] SECURITY: User ${authUser?.userId} attempted action for ${requestedUserId}`);
+      return c.json({ error: "Forbidden" }, 403);
+    }
+    const userId = requestedUserId;
     if (!completedStudyIds.length) return c.json({ synced: 0 });
 
     const today = new Date().toISOString().split("T")[0] as string;
