@@ -1,9 +1,9 @@
-import "@vibecodeapp/proxy"; // DO NOT REMOVE OTHERWISE VIBECODE PROXY WILL NOT WORK
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { serveStatic } from "hono/bun";
 import "./env";
 import { env, IS_PROD } from "./env";
+import { initFirebase } from "./firebase";
 import { prisma } from "./prisma";
 import { initDatabase } from "./db-init";
 import { sampleRouter } from "./routes/sample";
@@ -34,15 +34,19 @@ import { seedStoreItems } from "./seed-store-items";
 import { runStartupSanityCheck, runDailyBackup } from "./backup-service";
 import { logger } from "hono/logger";
 
+// Initialize Firebase Admin SDK on startup
+initFirebase();
+
 const app = new Hono();
 
 // CORS middleware - validates origin against allowlist
 const allowed = [
   /^http:\/\/localhost(:\d+)?$/,
   /^http:\/\/127\.0\.0\.1(:\d+)?$/,
-  /^https:\/\/[a-z0-9-]+\.dev\.vibecode\.run$/,
-  /^https:\/\/[a-z0-9-]+\.vibecode\.run$/,
 ];
+
+// Add your production domain to the allowlist:
+// allowed.push(/^https:\/\/yourdomain\.com$/);
 
 app.use(
   "*",
@@ -60,31 +64,8 @@ app.get("/health", (c) =>
   c.json({ status: "ok", appEnv: env.APP_ENV, isProd: IS_PROD })
 );
 
-// Debug endpoint — returns environment, DB identity, and community members
-// This is intentionally public (no auth) for cross-environment diagnosis
-app.get("/api/debug/env", async (c) => {
-  const [allUsers, communityMembers, communityTotal] = await Promise.all([
-    prisma.user.findMany({
-      select: { id: true, nickname: true, role: true, communityOptIn: true, points: true, createdAt: true },
-      orderBy: { createdAt: "asc" },
-    }),
-    prisma.user.findMany({
-      where: { communityOptIn: true },
-      select: { id: true, nickname: true },
-    }),
-    prisma.user.count({ where: { communityOptIn: true } }),
-  ]);
-  return c.json({
-    backendUrl: process.env.EXPO_PUBLIC_VIBECODE_BACKEND_URL ?? process.env.BACKEND_URL ?? "unknown",
-    appEnv: env.APP_ENV,
-    isProd: IS_PROD,
-    databaseUrl: env.DATABASE_URL ?? "unknown",
-    totalUsers: allUsers.length,
-    allUsers,
-    communityOptInTotal: communityTotal,
-    communityNicknames: communityMembers.map((u: { nickname: string }) => u.nickname),
-  });
-});
+// ⛔ REMOVED: Old unauthenticated debug endpoint that leaked all users and DB URL
+// This was a critical security vulnerability and has been removed.
 
 // Static file serving for card images
 app.use("/cards/*", serveStatic({ root: "./public" }));
@@ -111,14 +92,12 @@ app.route("/api/duel", duelRouter);
 app.route("/api/duel/queue", queueRouter);
 
 // Bootstrap endpoint — seed the full store item catalog.
-// Protected by the same hardcoded secret token.
+// Protected by the env-based secret token.
 app.post("/api/bootstrap/seed-store", async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const { secret } = body as { secret?: string };
 
-  const BOOTSTRAP_SECRET = "viti-bootstrap-2026-owner";
-
-  if (secret !== BOOTSTRAP_SECRET) {
+  if (secret !== env.BOOTSTRAP_SECRET) {
     return c.json({ error: "Invalid secret" }, 403);
   }
 
@@ -134,14 +113,12 @@ app.post("/api/bootstrap/seed-store", async (c) => {
 });
 
 // Bootstrap endpoint — promote a user to OWNER by userId or nickname.
-// Protected by a hardcoded secret token.
+// Protected by the env-based secret token.
 app.post("/api/bootstrap/promote-owner", async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const { secret, userId, nickname } = body as { secret?: string; userId?: string; nickname?: string };
 
-  const BOOTSTRAP_SECRET = "viti-bootstrap-2026-owner";
-
-  if (secret !== BOOTSTRAP_SECRET) {
+  if (secret !== env.BOOTSTRAP_SECRET) {
     return c.json({ error: "Invalid secret" }, 403);
   }
 

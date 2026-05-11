@@ -1,49 +1,159 @@
-# dependencies (bun install)
+################################
+# Dependencies
+################################
 node_modules
+package-lock.json
+bun.lock.unused
 
-# output
+# Output & Build
 out
 dist
 *.tgz
+build
 
-# code coverage
-coverage
-*.lcov
-
-# logs
-logs
-_.log
-report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
-server.log
-studio.log
-
-# dotenv environment variable files
+################################
+# Environment & Secrets (CRITICAL)
+################################
+# Local environment files - NEVER commit credentials
+.env
+.env.local
+.env.*.local
 .env.development.local
 .env.test.local
 .env.production.local
-.env.local
 
-# Database files
+# Firebase service account key (contains credentials)
+*-firebase-key.json
+firebase-*.json
+google-*.json
+service-account*.json
+*.pem
+
+# AWS/GCP credentials
+*.cred
+credentials.json
+gcpkey.json
+*.aws
+
+################################
+# Database & Persistent Data
+################################
+# SQLite database files
+*.db
+*.db-shm
+*.db-wal
 prisma/dev.db
-prisma/dev.db-shm
 prisma/dev.db-wal
+prisma/dev.db-shm
 
-# Backups (contain user data)
+# Backups (contain user data - never commit)
 backups/
+*.backup
+*.sql.backup
 
-# Generated temp files
-generated-image-urls.json
+# Local data directory
+data/
+*.sqlite
 
-# caches
+################################
+# Logs & Diagnostics
+################################
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+server.log
+studio.log
+pids
+*.pid
+
+################################
+# Coverage & Testing
+################################
+coverage
+*.lcov
+.nyc_output
+
+################################
+# IDE & Editor
+################################
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+.idea
+*.swp
+*.swo
+*~
+.DS_Store
+.AppleDouble
+.LSOverride
+*.sublime-workspace
+*.sublime-project
+.vim
+.editorconfig.local
+
+################################
+# OS Artifacts
+################################
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+################################
+# Build & Compilation Cache
+################################
 .eslintcache
 .cache
+.turbo
+dist
+out
 *.tsbuildinfo
+tsconfig.tsbuildinfo
 
-# IntelliJ based IDEs
-.idea
-
-# Finder (MacOS) folder config
-.DS_Store
-
-# Prisma generated files (bunx prisma generate)
+################################
+# Prisma Generated Files
+################################
 /generated/prisma
+prisma/client
+.prisma
+
+################################
+# Temporary & Generated Files
+################################
+generated-image-urls.json
+temp/
+tmp/
+*.tmp
+.temp
+
+################################
+# Runtime & Process
+################################
+.next
+*.hot-update.js
+*.hot-update.json
+
+################################
+# Docker
+################################
+.dockerignore
+.env.docker
+docker-compose.override.yml
+
+################################
+# Special Directories (user data, should backup separately)
+################################
+public/images/generated/
+public/uploads/
+uploads/
+
+# Note: Backups are critical but should be stored separately
+# Consider: S3, Google Cloud Storage, or dedicated backup service
+# Never rely on git for data backups

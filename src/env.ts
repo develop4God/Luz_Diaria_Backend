@@ -8,13 +8,19 @@ const envSchema = z.object({
   // Server Configuration
   PORT: z.string().optional().default("3000"),
   NODE_ENV: z.string().optional(),
-  BACKEND_URL: z.url("BACKEND_URL must be a valid URL").default("http://localhost:3000"), // Set via the Vibecode enviroment at run-time
+  BACKEND_URL: z.url("BACKEND_URL must be a valid URL").default("http://localhost:3000"),
 
   // Database
   DATABASE_URL: z.string().default("file:./dev.db"),
 
   // OpenAI
   OPENAI_API_KEY: z.string().min(1, "OPENAI_API_KEY is required"),
+
+  // Firebase Auth
+  FIREBASE_PROJECT_ID: z.string().min(1, "FIREBASE_PROJECT_ID is required"),
+
+  // Bootstrap Secret (moved from hardcoded)
+  BOOTSTRAP_SECRET: z.string().min(1, "BOOTSTRAP_SECRET is required"),
 
   // Environment: "dev" | "prod"
   // CRITICAL: This must be set to "prod" for production deployments.
